@@ -1,0 +1,158 @@
+Coroutine Flow
+Dependency
+Berikut ini adalah dependency yang perlu ditambahkan pada build.gradle(module: app) untuk menggunakan Coroutine.
+
+// Library dasar coroutine
+implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.6"
+ 
+// Library untuk memudahkan threading di Android
+implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.3.6"
+
+
+Kotlin Coroutine
+Mari kita bahas sedikit tentang Coroutine sebelum masuk lebih dalam tentang Flow. Coroutine adalah library yang digunakan untuk melakukan proses asynchronous pada bahasa Kotlin Native. Ia mengubah callback yang biasanya digunakan untuk menerima data menjadi kode yang lebih mudah dibaca, caranya yaitu dengan menerapkan suspend function seperti berikut:
+
+// Tanpa coroutine
+fun loadUser() {
+   api.fetchUser { user -> //callback
+      textView.text = user.name
+   }
+}
+ 
+// Dengan coroutine
+suspend fun loadUser() = coroutineScope {
+   val user = async { api.fetchUser() }.await
+   textView.text = user.name
+}
+
+Ada dua jenis fungsi yang bisa digunakan untuk menggunakan coroutine, yaitu:
+
+async : untuk proses dengan nilai kembalian.
+
+launch : untuk proses tanpa nilai kembalian.
+
+
+
+Konsep Dasar
+Coroutine memang library yang keren, namun Coroutine hanya bisa mengembalikan single value saja. Bagaimana jika ingin mengembalikan multiple-value seperti data stream? Di sinilah Flow hadir sebagai solusi.
+
+Berikut ini adalah contoh simpel penggunaan Flow. Anda dapat mencobanya di Android Studio dan menjalankannya.
+
+fun makeFlow() = flow {
+   println("mengirimkan nilai pertama")
+   emit(1)
+   println("sudah dapat nilai pertama, kirim nilai kedua")
+   emit(2)
+   println("sudah dapat nilai kedua, kirim nilai ketiga")
+   emit(3)
+   println("selesai")
+}
+ 
+GlobalScope.launch {
+   makeFlow().collect { value ->
+       println("dapat nilai $value")
+   }
+   println("flow sudah selesai")
+}
+flow{}: adalah builder untuk membuat Flow.
+
+emit : operator untuk mengirimkan value ke dalam Flow.
+
+collect (wajib ada) : terminal operator (operator terakhir) untuk mengambil hasil akhir data (hampir sama dengan subscribe pada RxJava).
+
+
+Hasil dari kode di atas adalah seperti berikut:
+20200814091353b9034ec8c64b5864d375a4e35259e1f2.jpeg
+
+Anda dapat melihat bahwa nilai dikirimkan satu per satu sehingga menghasilkan log yang berurutan seperti di atas.
+Flow memiliki fungsi yang mirip dengan tipe Flowable pada RxJava sehingga Anda dapat membuat dan mengubah data yang dikirim dengan operator seperti map, filter, dan operator lainnya seperti berikut.
+
+GlobalScope.launch {
+     flowOf("1", "2", "3", "4", "5", "6")
+           .map { string -> string.toInt() }
+           .filter { number -> number % 2 == 1 }
+           .collect { result -> println("$result adalah bilangan ganjil") }
+}
+flowOf: adalah builder untuk mendeklarasikan Flow dengan lebih cepat.
+
+map, filter : operator untuk transformasi dan filter data.
+
+collect (wajib ada) : salah satu terminal operator untuk mengambil setiap data.
+
+
+Berikut adalah hasil dari kode di atas jika dilihat dari Logcat:
+20210506104613ab2fa4e3bc38783d30330225a5a75c44.png
+
+Output 3 baris awal adalah hasil log pada fungsi collect jika dilihat hasil keluar satu per satu. Kenapa ya? Tentu karena konsep reactive sendiri adalah data di-emit satu per satu. 
+
+Selain collect, ada juga terminal operator lain yang berfungsi untuk menjalankan flow dan mengumpulkan hasil akhir sesuai dengan kebutuhan Anda. Contohnya yaitu seperti berikut:
+
+toList & toSet : untuk mengubah hasil akhir menjadi list.
+
+first : untuk mengambil value pertama saja. 
+
+single : untuk memastikan value pertama saja. 
+
+reduce & fold : untuk mengurangi banyak flow menjadi satu value saja.
+
+
+Berikut ini adalah contoh penerapan terminal operator count:
+
+GlobalScope.launch {
+   val total = flowOf("1", "2", "3", "4", "5", "6")
+       .map { string -> string.toInt() }
+       .count { number -> number % 2 == 1 }
+   println("Total bilangan ganjil : $total")
+}
+/* output:
+Total bilangan ganjil : 3
+*/
+Selain operator di atas, Anda dapat melihat fungsi lainnya secara lengkap di tautan berikut:
+
+Flow - Extension Functions
+
+
+
+Multi-Threading dengan Flow
+Okay, sekarang saatnya bermain dengan multi-threading. Seperti yang dijelaskan di awal modul, kita memerlukan multi-threading untuk membuat proses yang tidak memblok UI alias freeze. Dengan menggunakan Flow, Anda dapat berpindah antar thread dengan mudah dengan memanfaatkan Dispatcher dan bantuan operator flowOn.
+
+Sebagai contohnya Anda ingin mengambil data karyawan dari API seperti ini:
+
+CoroutineScope(Dispatchers.Main).launch {
+   getEmployeeNames()
+       .flowOn(Dispatchers.IO)
+       .collect { name -> println(name) }
+}
+...
+private fun getEmployeeNames(): Flow<String> {
+   val names = mutableListOf("Buchori", "Dimas", "Gheddi", "Gilang", "Widy")
+   return names.asFlow() //untuk membuat Flow dari Array
+}
+ 
+/*Output :
+Buchori
+Dimas
+Gheddi 
+Gilang 
+Widy
+*/
+Anggaplah fungsi getEmployeeNames merupakan fungsi yang mengambil data dari server, yang tentunya memerlukan waktu untuk mengambilnya dan kemudian menampilkannya di UI. Maka kode yang perlu Anda tambahkan adalah :
+
+flowOn : untuk mendefinisikan proses mengirim data dilakukan di mana.
+
+CoroutineScope : untuk mendefinisikan proses menerima data dilakukan di mana.
+
+
+Untuk menentukan thread yang digunakan, Anda bisa menggunakan beberapa pilihan Dispatcher berikut:
+
+Dispatchers.Default, adalah default dispatcher jika tidak ada Dispatcher yang didefinisikan, cocok untuk fungsi yang membutuhkan proses CPU yang tinggi, seperti parsing 100 data. 
+
+Dispatchers.IO, untuk menjalankan fungsi yang berisi read-write data ke Network/Disk, seperti menulis atau mengambil data ke database dan ke server. 
+
+Dispatchers.Main, untuk menjalankan fungsi di Main Thread, biasanya digunakan untuk mengupdate View UI.
+
+Pada kode di atas proses emitting dilakukan di Thread IO dan hasilnya ditampilkan pada Main Thread. Seperti itulah biasanya proses multi-threading untuk mengambil data dari server dilakukan.
+
+
+Selamat! Anda telah selangkah lebih maju untuk belajar menggunakan library Coroutine Flow dan penerapannya. Seperti biasa kami menyarankan Anda mendalami lebih jauh tentang Coroutine Flow melalui tautan di bawah ini:
+
